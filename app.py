@@ -6,6 +6,7 @@ app = Flask(__name__)
 # ----------------------------
 # DATABASE SETUP
 # ----------------------------
+import csv
 
 def init_db():
     conn = sqlite3.connect("ipl.db")
@@ -27,29 +28,21 @@ def init_db():
     count = cur.fetchone()[0]
 
     if count == 0:
-        players = [
 
-            ("Virat Kohli",
-            "https://documents.iplt20.com/ipl/IPLHeadshot2024/2.png",
-            "Batsman","RCB",138.1,200000),
+        with open("players.csv", newline='', encoding="utf-8") as file:
+            reader = csv.DictReader(file)
 
-            ("MS Dhoni",
-            "https://documents.iplt20.com/ipl/IPLHeadshot2024/57.png",
-            "Wicket Keeper","CSK",135.2,150000),
+            players = []
 
-            ("Rohit Sharma",
-            "https://documents.iplt20.com/ipl/IPLHeadshot2024/6.png",
-            "Batsman","MI",131.1,200000),
-
-            ("Jasprit Bumrah",
-            "https://documents.iplt20.com/ipl/IPLHeadshot2024/1124.png",
-            "Bowler","MI",85.0,180000),
-
-            ("Hardik Pandya",
-            "https://documents.iplt20.com/ipl/IPLHeadshot2024/2740.png",
-            "All-Rounder","MI",145.3,180000)
-
-        ]
+            for row in reader:
+                players.append((
+                    row["name"],
+                    row["photo"],
+                    row["role"],
+                    row["team"],
+                    float(row["strike_rate"]),
+                    int(row["current_bid"])
+                ))
 
         cur.executemany("""
         INSERT INTO players(name,photo,role,team,strike_rate,current_bid)
@@ -58,6 +51,10 @@ def init_db():
 
     conn.commit()
     conn.close()
+
+        
+
+       
 
 
 # ----------------------------
