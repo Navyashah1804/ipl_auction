@@ -1,58 +1,55 @@
+// REGISTER
+async function register() {
 
+let username = document.getElementById("username").value
+let password = document.getElementById("password").value
 
-const container=document.getElementById("players")
-const filter=document.getElementById("filter")
-
-async function loadPlayers(){
-
-let type=filter.value
-
-let res=await fetch(`/players?type=${type}`)
-let data=await res.json()
-
-container.innerHTML=""
-
-data.forEach(p=>{
-
-let card=document.createElement("div")
-card.className="card"
-
-card.innerHTML=`
-
-<h3>${p.name}</h3>
-<p>Team: ${p.team}</p>
-<p>Strike Rate: ${p.strike_rate}</p>
-<p>Current Bid: ₹${p.current_bid}</p>
-
-<input id="bid-${p.id}" placeholder="Enter bid">
-
-<button onclick="bid(${p.id})">Place Bid</button>
-
-`
-
-container.appendChild(card)
-
+let res = await fetch("/register", {
+method: "POST",
+headers: {
+"Content-Type": "application/json"
+},
+body: JSON.stringify({
+username: username,
+password: password
 })
+})
+
+let data = await res.json()
+
+if (data.status === "registered") {
+alert("Account created!")
+window.location = "/"
+} else {
+alert("Registration failed")
+}
 
 }
 
-async function bid(id){
 
-let bid=document.getElementById(`bid-${id}`).value
+// LOGIN
+async function login() {
 
-await fetch("/bid",{
-method:"POST",
-headers:{ "Content-Type":"application/json" },
-body:JSON.stringify({
-player_id:id,
-bid:bid
+let username = document.getElementById("username").value
+let password = document.getElementById("password").value
+
+let res = await fetch("/login", {
+method: "POST",
+headers: {
+"Content-Type": "application/json"
+},
+body: JSON.stringify({
+username: username,
+password: password
 })
 })
 
-loadPlayers()
+let data = await res.json()
 
+if (data.status === "success") {
+window.location = "/app"
+} else {
+alert("Invalid username or password")
 }
 
-filter.addEventListener("change",loadPlayers)
-
-loadPlayers()
+}
