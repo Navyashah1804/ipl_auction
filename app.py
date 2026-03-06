@@ -1,328 +1,236 @@
-from flask import Flask, request, jsonify, render_template_string
-import sqlite3
-import csv
 import os
+import pandas as pd
+from flask import Flask, request, jsonify, send_file, session
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
+app.secret_key = "auction-secret"
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, "ipl.db")
-CSV_PATH = os.path.join(BASE_DIR, "players.csv")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# ----------------------------
-# DATABASE SETUP
-# ----------------------------
 
-def init_db():
+def get_db():
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
-    conn = sqlite3.connect(DB_PATH)
+
+def setup_database():
+
+    conn = get_db()
     cur = conn.cursor()
 
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS users(
+    id SERIAL PRIMARY KEY,
+    username TEXT UNIQUE,
+    password TEXT
+    )
+    """)
+
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS players(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT,
-        photo TEXT,
-        role TEXT,
-        team TEXT,
-        strike_rate REAL,
-        current_bid INTEGER
+    id SERIAL PRIMARY KEY,
+    name TEXT,
+    team TEXT,
+    nationality TEXT,
+    strike_rate FLOAT,
+    base_price INT,
+    current_bid INT
+    )
+    """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS bids(
+    id SERIAL PRIMARY KEY,
+    user_id INT,
+    player_id INT,
+    amount INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
 
     cur.execute("SELECT COUNT(*) FROM players")
-    count = cur.fetchone()[0]
 
-    if count == 0 and os.path.exists(CSV_PATH):
+    if cur.fetchone()["count"] == 0:
 
-        players = []
+        df = pd.read_csv("players.csv")
 
-        with open(CSV_PATH, newline='', encoding="utf-8") as file:
+        for _, row in df.iterrows():
 
-            reader = csv.DictReader(file)
-
-            for row in reader:
-
-                name = row.get("name") or row.get("player") or "Unknown"
-                photo = row.get("photo") or ""
-                role = row.get("role") or ""
-                team = row.get("team") or ""
-                strike_rate = float(row.get("strike_rate") or 0)
-                current_bid = int(row.get("current_bid") or 100000)
-
-                players.append((name, photo, role, team, strike_rate, current_bid))
-
-        cur.executemany("""
-        INSERT INTO players(name,photo,role,team,strike_rate,current_bid)
-        VALUES(?,?,?,?,?,?)
-        """, players)
+            cur.execute(
+            """
+            INSERT INTO players(name,team,nationality,strike_rate,base_price,current_bid)
+            VALUES(%s,%s,%s,%s,%s,%s)
+            """,
+            (
+            row["name"],
+            row["team"],
+            row["nationality"],
+            row["strike_rate"],
+            row["base_price"],
+            row["current_bid"]
+            )
+            )
 
     conn.commit()
+    cur.close()
     conn.close()
 
 
-# Initialize DB on startup
-init_db()
-
-# ----------------------------
-# FRONTEND
-# ----------------------------
-
-HTML = """
-<!DOCTYPE html>
-<html>
-
-<head>
-
-<title>IPL Auction</title>
-
-<style>
-
-body{
-font-family:Arial;
-background:#0f172a;
-color:white;
-text-align:center;
-}
-
-h1{
-margin-top:20px;
-}
-
-.filters{
-margin:30px;
-}
-
-input,select{
-padding:10px;
-border-radius:6px;
-border:none;
-margin:5px;
-}
-
-button{
-padding:10px 15px;
-background:#ff9800;
-border:none;
-border-radius:6px;
-color:white;
-cursor:pointer;
-}
-
-#players{
-display:grid;
-grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
-gap:20px;
-padding:40px;
-}
-
-.card{
-background:#1e293b;
-padding:20px;
-border-radius:10px;
-}
-
-.photo{
-width:120px;
-height:120px;
-border-radius:50%;
-object-fit:cover;
-}
-
-</style>
-
-</head>
-
-<body>
-
-<h1>IPL Auction System</h1>
-
-<div class="filters">
-
-<input id="search" placeholder="Search player">
-
-<select id="role">
-<option value="">All Roles</option>
-<option value="Batsman">Batsman</option>
-<option value="Bowler">Bowler</option>
-<option value="All-Rounder">All-Rounder</option>
-<option value="Wicket Keeper">Wicket Keeper</option>
-</select>
-
-<button onclick="loadPlayers()">Search</button>
-
-</div>
-
-<div id="players"></div>
-
-
-<script>
-
-function loadPlayers(){
-
-let search=document.getElementById("search").value
-let role=document.getElementById("role").value
-
-fetch(`/players?search=${search}&role=${role}`)
-.then(res=>res.json())
-.then(data=>{
-
-let html=""
-
-if(data.length === 0){
-html="<h2>No players found</h2>"
-}
-
-data.forEach(p=>{
-
-html+=`
-
-<div class="card">
-
-<img src="${p.photo}" class="photo">
-
-<h3>${p.name}</h3>
-
-<p><b>Team:</b> ${p.team}</p>
-<p><b>Role:</b> ${p.role}</p>
-<p><b>Strike Rate:</b> ${p.strike_rate}</p>
-
-<p><b>Current Bid:</b> ₹${p.current_bid}</p>
-
-<input id="bid_${p.id}" placeholder="Enter bid">
-
-<button onclick="bid(${p.id})">Bid</button>
-
-</div>
-
-`
-
-})
-
-document.getElementById("players").innerHTML=html
-
-})
-
-}
-
-function bid(id){
-
-let bid=document.getElementById("bid_"+id).value
-
-fetch("/bid",{
-method:"POST",
-headers:{"Content-Type":"application/json"},
-body:JSON.stringify({id:id,bid:bid})
-})
-.then(res=>res.json())
-.then(data=>{
-alert(data.message || data.error)
-loadPlayers()
-})
-
-}
-
-loadPlayers()
-
-</script>
-
-</body>
-</html>
-"""
-
-# ----------------------------
-# ROUTES
-# ----------------------------
-
 @app.route("/")
 def home():
-    return render_template_string(HTML)
+
+    if "user_id" not in session:
+        return send_file("login.html")
+
+    return send_file("app.html")
+
+
+@app.route("/login-page")
+def login_page():
+    return send_file("login.html")
+
+
+@app.route("/register-page")
+def register_page():
+    return send_file("register.html")
+
+
+@app.route("/script.js")
+def js():
+    return send_file("script.js")
+
+
+@app.route("/register", methods=["POST"])
+def register():
+
+    data = request.json
+    username = data["username"]
+    password = generate_password_hash(data["password"])
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    try:
+
+        cur.execute(
+        "INSERT INTO users(username,password) VALUES(%s,%s)",
+        (username,password)
+        )
+
+        conn.commit()
+
+    except:
+        return jsonify({"error":"User exists"}),400
+
+    return jsonify({"success":True})
+
+
+@app.route("/login", methods=["POST"])
+def login():
+
+    data = request.json
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    cur.execute(
+    "SELECT * FROM users WHERE username=%s",
+    (data["username"],)
+    )
+
+    user = cur.fetchone()
+
+    if not user:
+        return jsonify({"error":"User not found"}),401
+
+    if not check_password_hash(user["password"],data["password"]):
+        return jsonify({"error":"Wrong password"}),401
+
+    session["user_id"] = user["id"]
+
+    return jsonify({"success":True})
+
+
+@app.route("/logout")
+def logout():
+
+    session.clear()
+
+    return jsonify({"success":True})
 
 
 @app.route("/players")
 def players():
 
-    search = request.args.get("search","")
-    role = request.args.get("role","")
+    nationality = request.args.get("type")
 
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_db()
     cur = conn.cursor()
 
-    query = "SELECT * FROM players WHERE LOWER(name) LIKE LOWER(?)"
-    params = [f"%{search}%"]
+    if nationality == "Indian":
 
-    if role:
-        query += " AND LOWER(role)=LOWER(?)"
-        params.append(role)
+        cur.execute(
+        "SELECT * FROM players WHERE nationality='Indian'"
+        )
 
-    cur.execute(query,params)
-    rows = cur.fetchall()
+    elif nationality == "Overseas":
 
-    players = []
+        cur.execute(
+        "SELECT * FROM players WHERE nationality='Overseas'"
+        )
 
-    for r in rows:
-        players.append({
-            "id":r[0],
-            "name":r[1],
-            "photo":r[2],
-            "role":r[3],
-            "team":r[4],
-            "strike_rate":r[5],
-            "current_bid":r[6]
-        })
+    else:
 
-    conn.close()
+        cur.execute(
+        "SELECT * FROM players"
+        )
+
+    players = cur.fetchall()
 
     return jsonify(players)
 
 
-@app.route("/bid",methods=["POST"])
+@app.route("/bid", methods=["POST"])
 def bid():
 
-    data=request.json
-    player_id=data["id"]
-    bid_amount=int(data["bid"])
+    if "user_id" not in session:
+        return jsonify({"error":"Login required"}),401
 
-    conn=sqlite3.connect(DB_PATH)
-    cur=conn.cursor()
+    data = request.json
+    player_id = data["player_id"]
+    bid_amount = int(data["bid"])
 
-    cur.execute("SELECT current_bid FROM players WHERE id=?",(player_id,))
-    current=cur.fetchone()[0]
-
-    if bid_amount <= current:
-        return jsonify({"error":"Bid must be higher than current bid"})
+    conn = get_db()
+    cur = conn.cursor()
 
     cur.execute(
-        "UPDATE players SET current_bid=? WHERE id=?",
-        (bid_amount,player_id)
+    "SELECT current_bid FROM players WHERE id=%s",
+    (player_id,)
+    )
+
+    current = cur.fetchone()["current_bid"]
+
+    if bid_amount <= current:
+        return jsonify({"error":"Bid must be higher"}),400
+
+    cur.execute(
+    "UPDATE players SET current_bid=%s WHERE id=%s",
+    (bid_amount,player_id)
+    )
+
+    cur.execute(
+    "INSERT INTO bids(user_id,player_id,amount) VALUES(%s,%s,%s)",
+    (session["user_id"],player_id,bid_amount)
     )
 
     conn.commit()
-    conn.close()
 
-    return jsonify({"message":"Bid successful"})
-
-
-# Debug route to verify database
-
-@app.route("/all")
-def all_players():
-
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("SELECT * FROM players")
-    data = cur.fetchall()
-    conn.close()
-
-    return str(data)
+    return jsonify({"success":True})
 
 
-# ----------------------------
-# RUN APP
-# ----------------------------
+setup_database()
 
 if __name__ == "__main__":
-
-    port = int(os.environ.get("PORT", 5000))
-
-    app.run(host="0.0.0.0", port=port)
+    app.run(debug=True)
