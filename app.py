@@ -1,6 +1,6 @@
-import os
-import psycopg2
 from flask import Flask, render_template, request, jsonify
+import psycopg2
+import os
 
 app = Flask(__name__)
 
@@ -11,39 +11,9 @@ def get_db():
     return psycopg2.connect(DATABASE_URL)
 
 
-def init_db():
-    try:
-        conn = get_db()
-        cur = conn.cursor()
-
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS users(
-            id SERIAL PRIMARY KEY,
-            username TEXT,
-            password TEXT
-        )
-        """)
-
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS players(
-            id SERIAL PRIMARY KEY,
-            name TEXT,
-            team TEXT,
-            price INT
-        )
-        """)
-
-        conn.commit()
-        cur.close()
-        conn.close()
-
-    except Exception as e:
-        print("Database init error:", e)
-
-
-@app.before_first_request
-def startup():
-    init_db()
+@app.route("/health")
+def health():
+    return {"status": "running"}
 
 
 @app.route("/")
@@ -72,7 +42,7 @@ def register():
 
     cur.execute(
         "INSERT INTO users (username,password) VALUES (%s,%s)",
-        (username, password)
+        (username, password),
     )
 
     conn.commit()
@@ -93,7 +63,7 @@ def login():
 
     cur.execute(
         "SELECT * FROM users WHERE username=%s AND password=%s",
-        (username, password)
+        (username, password),
     )
 
     user = cur.fetchone()
@@ -116,9 +86,9 @@ def players():
 
     rows = cur.fetchall()
 
-    players_list = []
+    players = []
     for r in rows:
-        players_list.append({
+        players.append({
             "id": r[0],
             "name": r[1],
             "team": r[2],
@@ -128,9 +98,4 @@ def players():
     cur.close()
     conn.close()
 
-    return jsonify(players_list)
-
-
-@app.route("/health")
-def health():
-    return {"status": "running"}
+    return jsonify(players)
