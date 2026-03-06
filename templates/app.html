@@ -1,95 +1,52 @@
-
 <!DOCTYPE html>
 <html>
 <head>
 <title>IPL Auction</title>
-<link rel="stylesheet" href="/static/style.css">
+
+<style>
+
+body{
+font-family:Arial;
+background:#0f172a;
+color:white;
+text-align:center;
+}
+
+.container{
+display:grid;
+grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+gap:20px;
+padding:20px;
+}
+
+.card{
+background:#1e293b;
+padding:20px;
+border-radius:10px;
+}
+
+button{
+padding:10px;
+margin-top:10px;
+}
+
+</style>
+
 </head>
 
 <body>
 
-<h1>IPL Auction System</h1>
+<h1>IPL Auction Dashboard</h1>
 
-<div class="filters">
-<input id="search" placeholder="Search player">
-<select id="role">
-<option value="">All Roles</option>
-<option value="Batsman">Batsman</option>
-<option value="Bowler">Bowler</option>
-<option value="All-Rounder">All-Rounder</option>
-<option value="Wicket Keeper">Wicket Keeper</option>
+<select id="filter">
+<option value="all">All Players</option>
+<option value="Indian">Indian</option>
+<option value="Overseas">Overseas</option>
 </select>
 
-<button onclick="loadPlayers()">Search</button>
-</div>
+<div class="container" id="players"></div>
 
-<div id="players"></div>
-
-<script>
-
-function loadPlayers(){
-
-let search=document.getElementById("search").value
-let role=document.getElementById("role").value
-
-fetch(`/players?search=${search}&role=${role}`)
-.then(res=>res.json())
-.then(data=>{
-
-let html=""
-
-data.forEach(p=>{
-
-html+=`
-<div class="card">
-
-<img src="${p.photo}" class="photo">
-
-<h3>${p.name}</h3>
-
-<p><b>Team:</b> ${p.team}</p>
-<p><b>Role:</b> ${p.role}</p>
-<p><b>Strike Rate:</b> ${p.strike_rate}</p>
-<p><b>Current Bid:</b> ₹${p.current_bid}</p>
-
-<input id="bid_${p.id}" placeholder="Enter bid">
-
-<button onclick="bid(${p.id})">Bid</button>
-
-</div>
-`
-})
-
-document.getElementById("players").innerHTML=html
-
-})
-
-}
-
-function bid(id){
-
-let bid=document.getElementById("bid_"+id).value
-
-fetch("/bid",{
-method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
-id:id,
-bid:bid
-})
-})
-.then(res=>res.json())
-.then(data=>{
-alert(data.message || data.error)
-loadPlayers()
-})
-}
-
-loadPlayers()
-
-</script>
+<script src="/script.js"></script>
 
 </body>
 </html>
