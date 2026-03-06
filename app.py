@@ -1,15 +1,21 @@
 from flask import Flask, request, jsonify, render_template_string
 import sqlite3
+import csv
+import os
 
 app = Flask(__name__)
 
 # ----------------------------
 # DATABASE SETUP
 # ----------------------------
-import csv
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "ipl.db")
+CSV_PATH = os.path.join(BASE_DIR, "players.csv")
+
 
 def init_db():
-    conn = sqlite3.connect("ipl.db")
+    conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
     cur.execute("""
@@ -27,12 +33,12 @@ def init_db():
     cur.execute("SELECT COUNT(*) FROM players")
     count = cur.fetchone()[0]
 
-    if count == 0:
+    if count == 0 and os.path.exists(CSV_PATH):
 
-        with open("players.csv", newline='', encoding="utf-8") as file:
+        players = []
+
+        with open(CSV_PATH, newline='', encoding="utf-8") as file:
             reader = csv.DictReader(file)
-
-            players = []
 
             for row in reader:
                 players.append((
@@ -52,22 +58,18 @@ def init_db():
     conn.commit()
     conn.close()
 
-        
 
-       
-
+# Initialize DB automatically (important for Render)
+init_db()
 
 # ----------------------------
-# FRONTEND HTML
+# FRONTEND
 # ----------------------------
 
 HTML = """
-
 <!DOCTYPE html>
 <html>
-
 <head>
-
 <title>IPL Auction</title>
 
 <style>
@@ -77,10 +79,6 @@ font-family:Arial;
 background:#0f172a;
 color:white;
 text-align:center;
-}
-
-h1{
-margin-top:20px;
 }
 
 .filters{
@@ -100,7 +98,6 @@ background:#ff9800;
 border:none;
 border-radius:6px;
 color:white;
-font-weight:bold;
 cursor:pointer;
 }
 
@@ -115,7 +112,6 @@ padding:40px;
 background:#1e293b;
 padding:20px;
 border-radius:10px;
-box-shadow:0 10px 20px rgba(0,0,0,0.3);
 }
 
 .photo{
@@ -123,7 +119,6 @@ width:120px;
 height:120px;
 border-radius:50%;
 object-fit:cover;
-margin-bottom:10px;
 }
 
 </style>
@@ -152,7 +147,6 @@ margin-bottom:10px;
 
 <div id="players"></div>
 
-
 <script>
 
 function loadPlayers(){
@@ -169,33 +163,29 @@ let html=""
 data.forEach(p=>{
 
 html+=`
-
 <div class="card">
 
 <img src="${p.photo}" class="photo">
 
 <h3>${p.name}</h3>
 
-<p><b>Team:</b> ${p.team}</p>
-<p><b>Role:</b> ${p.role}</p>
-<p><b>Strike Rate:</b> ${p.strike_rate}</p>
+<p>${p.team}</p>
+<p>${p.role}</p>
+<p>Strike Rate: ${p.strike_rate}</p>
 
-<p><b>Current Bid:</b> ₹${p.current_bid}</p>
+<p>Bid: ₹${p.current_bid}</p>
 
 <input id="bid_${p.id}" placeholder="Enter bid">
 
 <button onclick="bid(${p.id})">Bid</button>
 
 </div>
-
 `
-
 })
 
 document.getElementById("players").innerHTML=html
 
 })
-
 }
 
 function bid(id){
@@ -204,13 +194,8 @@ let bid=document.getElementById("bid_"+id).value
 
 fetch("/bid",{
 method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
-id:id,
-bid:bid
-})
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({id:id,bid:bid})
 })
 .then(res=>res.json())
 .then(data=>{
@@ -226,9 +211,7 @@ loadPlayers()
 
 </body>
 </html>
-
 """
-
 
 # ----------------------------
 # ROUTES
@@ -245,7 +228,7 @@ def players():
     search = request.args.get("search","")
     role = request.args.get("role","")
 
-    conn = sqlite3.connect("ipl.db")
+    conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
     query = "SELECT * FROM players WHERE name LIKE ?"
@@ -283,7 +266,7 @@ def bid():
     player_id=data["id"]
     bid_amount=int(data["bid"])
 
-    conn=sqlite3.connect("ipl.db")
+    conn=sqlite3.connect(DB_PATH)
     cur=conn.cursor()
 
     cur.execute("SELECT current_bid FROM players WHERE id=?",(player_id,))
@@ -301,12 +284,3 @@ def bid():
     conn.close()
 
     return jsonify({"message":"Bid successful"})
-
-
-# ----------------------------
-# RUN APP
-# ----------------------------
-
-if __name__ == "__main__":
-    init_db()
-    app.run(host="0.0.0.0", port=5000)
