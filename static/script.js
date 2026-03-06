@@ -53,3 +53,27 @@ alert("Invalid username or password")
 }
 
 }
+async function loadPlayers(){
+
+let res = await fetch("/players")
+let players = await res.json()
+
+let container = document.getElementById("players")
+
+container.innerHTML=""
+
+players.forEach(p => {
+
+container.innerHTML += `
+<div style="border:1px solid white; padding:15px; margin:10px;">
+<h3>${p.name}</h3>
+<p>Team: ${p.team}</p>
+<p>Price: ₹${p.price}</p>
+</div>
+`
+
+})
+
+}
+
+window.onload = loadPlayers
