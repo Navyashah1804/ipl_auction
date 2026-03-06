@@ -1,6 +1,6 @@
 import os
 import pandas as pd
-from flask import Flask, request, jsonify, send_file, session
+from flask import Flask, request, jsonify, render_template, session, redirect
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -11,127 +11,108 @@ app.secret_key = "auction-secret"
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
-# -------------------------
+# ---------------------------
 # DATABASE CONNECTION
-# -------------------------
+# ---------------------------
 def get_db():
-
-    if not DATABASE_URL:
-        raise Exception("DATABASE_URL not set")
-
     conn = psycopg2.connect(
         DATABASE_URL,
         sslmode="require",
         cursor_factory=RealDictCursor
     )
-
     return conn
 
 
-# -------------------------
+# ---------------------------
 # DATABASE SETUP
-# -------------------------
+# ---------------------------
 def setup_database():
 
-    try:
+    conn = get_db()
+    cur = conn.cursor()
 
-        conn = get_db()
-        cur = conn.cursor()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS users(
+        id SERIAL PRIMARY KEY,
+        username TEXT UNIQUE,
+        password TEXT
+    )
+    """)
 
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS users(
-            id SERIAL PRIMARY KEY,
-            username TEXT UNIQUE,
-            password TEXT
-        )
-        """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS players(
+        id SERIAL PRIMARY KEY,
+        name TEXT,
+        team TEXT,
+        nationality TEXT,
+        strike_rate FLOAT,
+        base_price INT,
+        current_bid INT
+    )
+    """)
 
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS players(
-            id SERIAL PRIMARY KEY,
-            name TEXT,
-            team TEXT,
-            nationality TEXT,
-            strike_rate FLOAT,
-            base_price INT,
-            current_bid INT
-        )
-        """)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS bids(
+        id SERIAL PRIMARY KEY,
+        user_id INT,
+        player_id INT,
+        amount INT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
 
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS bids(
-            id SERIAL PRIMARY KEY,
-            user_id INT,
-            player_id INT,
-            amount INT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
+    cur.execute("SELECT COUNT(*) FROM players")
+    count = cur.fetchone()["count"]
 
-        cur.execute("SELECT COUNT(*) FROM players")
-        count = cur.fetchone()["count"]
+    if count == 0:
 
-        if count == 0:
+        df = pd.read_csv("players.csv")
 
-            if os.path.exists("players.csv"):
+        for _, row in df.iterrows():
 
-                df = pd.read_csv("players.csv")
+            cur.execute("""
+            INSERT INTO players(name,team,nationality,strike_rate,base_price,current_bid)
+            VALUES(%s,%s,%s,%s,%s,%s)
+            """,
+            (
+                row["name"],
+                row["team"],
+                row["nationality"],
+                row["strike_rate"],
+                row["base_price"],
+                row["current_bid"]
+            ))
 
-                for _, row in df.iterrows():
-
-                    cur.execute("""
-                    INSERT INTO players(name,team,nationality,strike_rate,base_price,current_bid)
-                    VALUES(%s,%s,%s,%s,%s,%s)
-                    """,
-                    (
-                        row["name"],
-                        row["team"],
-                        row["nationality"],
-                        row["strike_rate"],
-                        row["base_price"],
-                        row["current_bid"]
-                    ))
-
-        conn.commit()
-
-        cur.close()
-        conn.close()
-
-    except Exception as e:
-        print("DATABASE INIT ERROR:", e)
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
-# -------------------------
-# ROUTES
-# -------------------------
-
+# ---------------------------
+# PAGE ROUTES
+# ---------------------------
 @app.route("/")
 def home():
 
     if "user_id" not in session:
-        return send_file("login.html")
+        return render_template("login.html")
 
-    return send_file("app.html")
+    return render_template("app.html")
 
 
 @app.route("/login-page")
 def login_page():
-    return send_file("login.html")
+    return render_template("login.html")
 
 
 @app.route("/register-page")
 def register_page():
-    return send_file("register.html")
+    return render_template("register.html")
 
 
-@app.route("/script.js")
-def script():
-    return send_file("script.js")
-
-
-# -------------------------
-# REGISTER
-# -------------------------
+# ---------------------------
+# AUTH ROUTES
+# ---------------------------
 @app.route("/register", methods=["POST"])
 def register():
 
@@ -143,23 +124,18 @@ def register():
     cur = conn.cursor()
 
     try:
-
         cur.execute(
             "INSERT INTO users(username,password) VALUES(%s,%s)",
-            (username,password)
+            (username, password)
         )
-
         conn.commit()
 
     except:
-        return jsonify({"error":"User already exists"}),400
+        return jsonify({"error": "User already exists"}), 400
 
-    return jsonify({"success":True})
+    return jsonify({"success": True})
 
 
-# -------------------------
-# LOGIN
-# -------------------------
 @app.route("/login", methods=["POST"])
 def login():
 
@@ -176,25 +152,25 @@ def login():
     user = cur.fetchone()
 
     if not user:
-        return jsonify({"error":"User not found"}),401
+        return jsonify({"error": "User not found"}), 401
 
-    if not check_password_hash(user["password"],data["password"]):
-        return jsonify({"error":"Wrong password"}),401
+    if not check_password_hash(user["password"], data["password"]):
+        return jsonify({"error": "Wrong password"}), 401
 
     session["user_id"] = user["id"]
 
-    return jsonify({"success":True})
+    return jsonify({"success": True})
 
 
 @app.route("/logout")
 def logout():
     session.clear()
-    return jsonify({"success":True})
+    return redirect("/")
 
 
-# -------------------------
-# PLAYERS
-# -------------------------
+# ---------------------------
+# PLAYERS API
+# ---------------------------
 @app.route("/players")
 def players():
 
@@ -204,36 +180,30 @@ def players():
     cur = conn.cursor()
 
     if nationality == "Indian":
-
-        cur.execute(
-            "SELECT * FROM players WHERE nationality='Indian'"
-        )
+        cur.execute("SELECT * FROM players WHERE nationality='Indian'")
 
     elif nationality == "Overseas":
-
-        cur.execute(
-            "SELECT * FROM players WHERE nationality='Overseas'"
-        )
+        cur.execute("SELECT * FROM players WHERE nationality='Overseas'")
 
     else:
-
-        cur.execute(
-            "SELECT * FROM players"
-        )
+        cur.execute("SELECT * FROM players")
 
     players = cur.fetchall()
+
+    cur.close()
+    conn.close()
 
     return jsonify(players)
 
 
-# -------------------------
-# BID
-# -------------------------
+# ---------------------------
+# BIDDING API
+# ---------------------------
 @app.route("/bid", methods=["POST"])
 def bid():
 
     if "user_id" not in session:
-        return jsonify({"error":"Login required"}),401
+        return jsonify({"error": "Login required"}), 401
 
     data = request.json
     player_id = data["player_id"]
@@ -250,33 +220,38 @@ def bid():
     current = cur.fetchone()["current_bid"]
 
     if bid_amount <= current:
-        return jsonify({"error":"Bid must be higher"}),400
+        return jsonify({"error": "Bid must be higher"}), 400
 
     cur.execute(
         "UPDATE players SET current_bid=%s WHERE id=%s",
-        (bid_amount,player_id)
+        (bid_amount, player_id)
     )
 
     cur.execute(
         "INSERT INTO bids(user_id,player_id,amount) VALUES(%s,%s,%s)",
-        (session["user_id"],player_id,bid_amount)
+        (session["user_id"], player_id, bid_amount)
     )
 
     conn.commit()
 
-    return jsonify({"success":True})
+    cur.close()
+    conn.close()
+
+    return jsonify({"success": True})
 
 
+# ---------------------------
+# HEALTH CHECK
+# ---------------------------
 @app.route("/health")
 def health():
-    return jsonify({"status":"running"})
+    return {"status": "running"}
 
 
-# Initialize DB
+# ---------------------------
+# STARTUP
+# ---------------------------
 setup_database()
 
-app.config["PROPAGATE_EXCEPTIONS"] = True
-app.config["DEBUG"] = True
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000, debug=True)
+    app.run(debug=True)
