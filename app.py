@@ -5,16 +5,16 @@ import os
 
 app = Flask(__name__)
 
-# ----------------------------
-# DATABASE SETUP
-# ----------------------------
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(BASE_DIR, "ipl.db")
 CSV_PATH = os.path.join(BASE_DIR, "players.csv")
 
+# ----------------------------
+# DATABASE SETUP
+# ----------------------------
 
 def init_db():
+
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
@@ -38,16 +38,25 @@ def init_db():
         players = []
 
         with open(CSV_PATH, newline='', encoding="utf-8") as file:
+
             reader = csv.DictReader(file)
 
             for row in reader:
+
+                name = row.get("name") or row.get("player") or row.get("player_name") or "Unknown"
+                photo = row.get("photo") or ""
+                role = row.get("role") or ""
+                team = row.get("team") or ""
+                strike_rate = float(row.get("strike_rate") or 0)
+                current_bid = int(row.get("current_bid") or 100000)
+
                 players.append((
-                    row["name"],
-                    row["photo"],
-                    row["role"],
-                    row["team"],
-                    float(row["strike_rate"]),
-                    int(row["current_bid"])
+                    name,
+                    photo,
+                    role,
+                    team,
+                    strike_rate,
+                    current_bid
                 ))
 
         cur.executemany("""
@@ -59,17 +68,21 @@ def init_db():
     conn.close()
 
 
-# Initialize DB automatically (important for Render)
+# Initialize database automatically
 init_db()
 
+
 # ----------------------------
-# FRONTEND
+# FRONTEND HTML
 # ----------------------------
 
 HTML = """
+
 <!DOCTYPE html>
 <html>
+
 <head>
+
 <title>IPL Auction</title>
 
 <style>
@@ -79,6 +92,10 @@ font-family:Arial;
 background:#0f172a;
 color:white;
 text-align:center;
+}
+
+h1{
+margin-top:20px;
 }
 
 .filters{
@@ -147,6 +164,7 @@ object-fit:cover;
 
 <div id="players"></div>
 
+
 <script>
 
 function loadPlayers(){
@@ -163,6 +181,7 @@ let html=""
 data.forEach(p=>{
 
 html+=`
+
 <div class="card">
 
 <img src="${p.photo}" class="photo">
@@ -173,19 +192,22 @@ html+=`
 <p>${p.role}</p>
 <p>Strike Rate: ${p.strike_rate}</p>
 
-<p>Bid: ₹${p.current_bid}</p>
+<p>Current Bid: ₹${p.current_bid}</p>
 
 <input id="bid_${p.id}" placeholder="Enter bid">
 
 <button onclick="bid(${p.id})">Bid</button>
 
 </div>
+
 `
+
 })
 
 document.getElementById("players").innerHTML=html
 
 })
+
 }
 
 function bid(id){
@@ -211,7 +233,9 @@ loadPlayers()
 
 </body>
 </html>
+
 """
+
 
 # ----------------------------
 # ROUTES
@@ -284,3 +308,14 @@ def bid():
     conn.close()
 
     return jsonify({"message":"Bid successful"})
+
+
+# ----------------------------
+# RUN APP
+# ----------------------------
+
+if __name__ == "__main__":
+
+    port = int(os.environ.get("PORT", 5000))
+
+    app.run(host="0.0.0.0", port=port)
