@@ -43,21 +43,14 @@ def init_db():
 
             for row in reader:
 
-                name = row.get("name") or row.get("player") or row.get("player_name") or "Unknown"
+                name = row.get("name") or row.get("player") or "Unknown"
                 photo = row.get("photo") or ""
                 role = row.get("role") or ""
                 team = row.get("team") or ""
                 strike_rate = float(row.get("strike_rate") or 0)
                 current_bid = int(row.get("current_bid") or 100000)
 
-                players.append((
-                    name,
-                    photo,
-                    role,
-                    team,
-                    strike_rate,
-                    current_bid
-                ))
+                players.append((name, photo, role, team, strike_rate, current_bid))
 
         cur.executemany("""
         INSERT INTO players(name,photo,role,team,strike_rate,current_bid)
@@ -68,16 +61,14 @@ def init_db():
     conn.close()
 
 
-# Initialize database automatically
+# Initialize DB on startup
 init_db()
 
-
 # ----------------------------
-# FRONTEND HTML
+# FRONTEND
 # ----------------------------
 
 HTML = """
-
 <!DOCTYPE html>
 <html>
 
@@ -178,6 +169,10 @@ fetch(`/players?search=${search}&role=${role}`)
 
 let html=""
 
+if(data.length === 0){
+html="<h2>No players found</h2>"
+}
+
 data.forEach(p=>{
 
 html+=`
@@ -188,11 +183,11 @@ html+=`
 
 <h3>${p.name}</h3>
 
-<p>${p.team}</p>
-<p>${p.role}</p>
-<p>Strike Rate: ${p.strike_rate}</p>
+<p><b>Team:</b> ${p.team}</p>
+<p><b>Role:</b> ${p.role}</p>
+<p><b>Strike Rate:</b> ${p.strike_rate}</p>
 
-<p>Current Bid: ₹${p.current_bid}</p>
+<p><b>Current Bid:</b> ₹${p.current_bid}</p>
 
 <input id="bid_${p.id}" placeholder="Enter bid">
 
@@ -233,9 +228,7 @@ loadPlayers()
 
 </body>
 </html>
-
 """
-
 
 # ----------------------------
 # ROUTES
@@ -255,11 +248,11 @@ def players():
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
 
-    query = "SELECT * FROM players WHERE name LIKE ?"
+    query = "SELECT * FROM players WHERE LOWER(name) LIKE LOWER(?)"
     params = [f"%{search}%"]
 
     if role:
-        query += " AND role=?"
+        query += " AND LOWER(role)=LOWER(?)"
         params.append(role)
 
     cur.execute(query,params)
@@ -308,6 +301,20 @@ def bid():
     conn.close()
 
     return jsonify({"message":"Bid successful"})
+
+
+# Debug route to verify database
+
+@app.route("/all")
+def all_players():
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM players")
+    data = cur.fetchall()
+    conn.close()
+
+    return str(data)
 
 
 # ----------------------------
